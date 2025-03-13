@@ -1,0 +1,18 @@
+{
+    "makefile.makePath": "C:\\msys64\\mingw64\\bin\\mingw32-make",
+    "makefile.configurationCachePath": "",
+
+    "makefile.configureOnOpen": true,
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "c:\\Source\\Repos\\Embeded\\Test",
+            "binaryPath": "c:\\Source\\Repos\\Embeded\\Test\\MyProjectName.elf",
+            "binaryArgs": []
+        }
+    ],
+    "files.associations": {
+        "io.h": "c",
+        "portpins.h": "c",
+        "delay.h": "c"
+    }
+}

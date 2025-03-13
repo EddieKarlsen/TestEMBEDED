@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = 'MyProjectName.hex'
+elf = 'MyProjectName.elf'
