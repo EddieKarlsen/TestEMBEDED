@@ -17,7 +17,14 @@ typedef enum {
     LED_BLINKING      
 } LEDState;
 
+#define COMMAND_BUFFER_SIZE 20
+
 volatile uint32_t timerMillis = 0;
+
+volatile char commandBuffer[COMMAND_BUFFER_SIZE];
+volatile uint8_t commandIndex = 0;
+volatile uint8_t commandReady = 0;
+
 volatile uint8_t buttonStates[NUM_BUTTONS] = {0};
 volatile uint8_t lastButtonStates[NUM_BUTTONS] = {0}; 
 volatile uint8_t buttonPressed[NUM_BUTTONS] = {0};
@@ -94,9 +101,6 @@ uint8_t readButton(Button button) {
 }
 
 void handleButton(Button button) {
-    static uint8_t lastButtonStates[NUM_BUTTONS] = {0};
-    static uint8_t buttonPressed[NUM_BUTTONS] = {0};
-
     uint8_t buttonStateNow = readButton(button);
 
     if (buttonStateNow != lastButtonStates[button]) {
@@ -117,7 +121,7 @@ void handleButton(Button button) {
         } else if (ledStates[button] == LED_OFF) {
             ledStates[button] = LED_ON;
         }
-        buttonPressed[button] = 0; 
+        buttonPressed[button] = 0;  
     }
 }
 
@@ -130,39 +134,57 @@ uint8_t isResetButtonPressed() {
 }
 
 void initUSART() {
-
     unsigned int ubrr = F_CPU / 16 / 9600 - 1;
     UBRR0H = (unsigned char)(ubrr >> 8);
-    UBRR0L = (unsigned char)ubrr; 
-    UCSR0B = (1 << TXEN0);
+    UBRR0L = (unsigned char)ubrr;
+    UCSR0B = (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0);
     UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
+    sei(); 
 }
 
+int strcasecmp_custom(const char *s1, const char *s2) {
+    while (*s1 && *s2) {
+        char c1 = (*s1 >= 'a' && *s1 <= 'z') ? (*s1 - 32) : *s1;
+        char c2 = (*s2 >= 'a' && *s2 <= 'z') ? (*s2 - 32) : *s2;
+        if (c1 != c2) return c1 - c2;
+        s1++; s2++;
+    }
+    return *s1 - *s2;
+}
 
-void USART_PrintString(char* str) {
+void USART_PrintString(const char* str) {
     while (*str) {
         USART_Transmit(*str++);
     }
 }
+
 void USART_Transmit(unsigned char data) {
     while (!(UCSR0A & (1 << UDRE0)));
-    UDR0 = data; 
+    UDR0 = data;
 }
 
-void USART_ReadString(char *buffer, uint8_t maxLength) {
-    
-    uint8_t index = 0;
-    while (index < maxLength - 1) {
-        if (UCSR0A & (1 << RXC0)) {
-    buffer[index++] = UDR0;
-}        char received = UDR0;
-        if (received == '\n' || received == '\r') {
-            break;
+ISR(USART_RX_vect) {
+    char received = UDR0;
+
+    if (received == '\r' || received == '\n') {  
+        commandBuffer[commandIndex] = '\0';
+        commandReady = 1;
+        commandIndex = 0;
+        USART_PrintString("\r\n");
+    } 
+    else if (received == '\b' || received == 127) { 
+        if (commandIndex > 0) {
+            commandIndex--;
+            USART_PrintString("\b \b");
         }
-        buffer[index++] = received;
+    } 
+    else if (commandIndex < COMMAND_BUFFER_SIZE - 1) {  
+        commandBuffer[commandIndex++] = received;
+        USART_Transmit(received);
     }
-    buffer[index] = '\0';
 }
+
+
 
 void initPWM() {
     DDRC |= (1 << PC1);
@@ -203,42 +225,73 @@ void itoa_custom(int num, char* str, int base) {
 }
 
 void processCommand(char *command) {
+    char *newline = strpbrk(command, "\r\n");
+    if (newline) *newline = '\0';
+
+    USART_PrintString("Processing: ");
     USART_PrintString(command);
-    if (strncmp(command, "LedOn RED", (size_t)9) == 0) {
-        ledStates[BUTTON_RED] = LED_ON;
-    } 
-    if (strncmp(command, "a", 1)==0){
-        USART_PrintString("HEJ");
+    USART_PrintString("\r\n");
+
+
+    USART_PrintString("Processed Command: ");
+    USART_PrintString(command);
+    USART_PrintString("\r\n");
+
+ 
+    if (strcasecmp_custom(command, "help") == 0) {
+        USART_PrintString("Available commands:\r\n");
+        USART_PrintString("1. GetADC - Get the ADC value from the potentiometer\r\n");
+        USART_PrintString("2. LedOn <color> - Turn on the LED for the specified color (red, green, blue)\r\n");
+        USART_PrintString("3. LedOff <color> - Turn off the LED for the specified color (red, green, blue)\r\n");
+        USART_PrintString("4. LedBlink <color> - Make the LED blink for the specified color (red, green, blue)\r\n");
+        USART_PrintString("5. Reset - Reset the system (press the reset button)\r\n");
+        USART_PrintString("\r\n");
     }
-    else if (strncmp(command, "LedOn GREEN", 11) == 0) {
-        ledStates[BUTTON_GREEN] = LED_ON;
-    } else if (strncmp(command, "LedOn BLUE", 10) == 0) {
-        ledStates[BUTTON_BLUE] = LED_ON;
-    } else if (strncmp(command, "LedOff RED", 10) == 0) {
-        ledStates[BUTTON_RED] = LED_OFF;
-    } else if (strncmp(command, "LedOff GREEN", 12) == 0) {
-        ledStates[BUTTON_GREEN] = LED_OFF;
-    } else if (strncmp(command, "LedOff BLUE", 11) == 0) {
-        ledStates[BUTTON_BLUE] = LED_OFF;
-    } else if (strncmp(command, "LedBlink RED", 12) == 0) {
-        ledStates[BUTTON_RED] = LED_BLINKING;
-    } else if (strncmp(command, "LedBlink GREEN", 14) == 0) {
-        ledStates[BUTTON_GREEN] = LED_BLINKING;
-    } else if (strncmp(command, "LedBlink BLUE", 13) == 0) {
-        ledStates[BUTTON_BLUE] = LED_BLINKING;
-    } else if (strncmp(command, "GetADC", 6) == 0) {
+
+    else if (strcasecmp_custom(command, "getadc") == 0) {
         uint16_t adcValue = readADC(); 
         char buffer[10];
-        itoa_custom(adcValue, buffer, 10);  
-        USART_PrintString("ADC Value: "); 
-        USART_PrintString(buffer);        
-        USART_Transmit('\n');             
-        USART_Transmit('\r');              
-    } else {
+        itoa_custom(adcValue, buffer, 10);
+        USART_PrintString("ADC Value: ");
+        USART_PrintString(buffer);
+        USART_PrintString("\r\n");
+    } 
+    else if (strcasecmp_custom(command, "ledon red") == 0) {
+        ledStates[BUTTON_RED] = LED_ON;
+    } 
+    else if (strcasecmp_custom(command, "ledon green") == 0) {
+        ledStates[BUTTON_GREEN] = LED_ON;
+    } 
+    else if (strcasecmp_custom(command, "ledon blue") == 0) {
+        ledStates[BUTTON_BLUE] = LED_ON;
+    } 
+    else if (strcasecmp_custom(command, "ledoff red") == 0) {
+        ledStates[BUTTON_RED] = LED_OFF;
+    } 
+    else if (strcasecmp_custom(command, "ledoff green") == 0) {
+        ledStates[BUTTON_GREEN] = LED_OFF;
+    } 
+    else if (strcasecmp_custom(command, "ledoff blue") == 0) {
+        ledStates[BUTTON_BLUE] = LED_OFF;
+    } 
+    else if (strcasecmp_custom(command, "ledblink red") == 0) {
+        ledStates[BUTTON_RED] = LED_BLINKING;
+    } 
+    else if (strcasecmp_custom(command, "ledblink green") == 0) {
+        ledStates[BUTTON_GREEN] = LED_BLINKING;
+    } 
+    else if (strcasecmp_custom(command, "ledblink blue") == 0) {
+        ledStates[BUTTON_BLUE] = LED_BLINKING;
+    } 
+    else if (strcasecmp_custom(command, "reset") == 0) {
+        ledStates[BUTTON_RED] = LED_BLINKING;
+        ledStates[BUTTON_GREEN] = LED_BLINKING;
+        ledStates[BUTTON_BLUE] = LED_BLINKING;
+    } 
+    else {
         USART_PrintString("Unknown Command\r\n");
     }
 }
-
 
 void handleLED(Button button) {
     switch (ledStates[button]) {
@@ -268,12 +321,11 @@ void handleLED(Button button) {
 
 int main() 
 { 
-    char commandBuffer[20];
-    initMillisTimer(); 
+    initMillisTimer();
     initUSART();
-    initPWM(); 
+    initPWM();
     setup();
-    USART_PrintString("ADC Value: ");
+    
     while (1) {
         handleButton(BUTTON_RED);
         handleButton(BUTTON_GREEN);
@@ -289,13 +341,11 @@ int main()
             ledStates[BUTTON_BLUE] = LED_BLINKING;
         }
         
-        _delay_ms(100);
-        USART_ReadString(commandBuffer, sizeof(commandBuffer));
-        if (commandBuffer[0] != '\0') {
-            processCommand(commandBuffer);  
-            
+        if (commandReady) {
+            char tempCommand[COMMAND_BUFFER_SIZE];
+            strcpy(tempCommand, (char*)commandBuffer); 
+            commandReady = 0;
+            processCommand(tempCommand);
         }
-        USART_PrintString("test");
     }
 }
-
