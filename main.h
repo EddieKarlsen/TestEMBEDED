@@ -7,5 +7,7 @@ void USART_PrintString(const char* str);
 void initMillisTimer();
 void initPWM();
 void itoa_custom(int num, char* str, int base);
+
+void processCommand(char *command);
 void setup();
 #endif
