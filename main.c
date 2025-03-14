@@ -35,7 +35,8 @@ volatile LEDState ledStates[NUM_BUTTONS] = {LED_BLINKING, LED_BLINKING, LED_BLIN
 #define LED_RED_PIN    PB5
 #define LED_GREEN_PIN  PB4
 #define LED_BLUE_PIN   PC1
-#define LED_RGB_PIN    PB3
+#define LED_RGB_PIN    PB3 
+
 
 
 void setup(){
