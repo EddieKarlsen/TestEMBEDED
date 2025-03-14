@@ -35,19 +35,26 @@ volatile LEDState ledStates[NUM_BUTTONS] = {LED_BLINKING, LED_BLINKING, LED_BLIN
 #define LED_RED_PIN    PB5
 #define LED_GREEN_PIN  PB4
 #define LED_BLUE_PIN   PC1
-#define LED_RGB_PIN    PB3 
+#define LED_RGB_RED_PIN   PB3
+#define LED_RGB_GREEN_PIN PB2
+#define LED_RGB_BLUE_PIN  PB1
+
+
+
 
 
 
 void setup(){
     DDRB |= (1 << LED_RED_PIN);
     DDRB |= (1 << LED_GREEN_PIN);
-    DDRB |= (1 << LED_RGB_PIN);
+    DDRB |= (1 << LED_RGB_RED_PIN);
+    DDRB |= (1 << LED_RGB_GREEN_PIN);
+    DDRB |= (1 << LED_RGB_BLUE_PIN);
 
 
 
     ADMUX = (1 << REFS0); //blå potentiometer
-    DDRC |= (1 << LED_BLUE_PIN); // blå LED  
+    DDRC |= (1 << LED_BLUE_PIN);
     ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1);
 
     DDRB &= ~(1 << PB0); //Röd Knapp
@@ -138,7 +145,7 @@ void initUSART() {
     unsigned int ubrr = F_CPU / 16 / 9600 - 1;
     UBRR0H = (unsigned char)(ubrr >> 8);
     UBRR0L = (unsigned char)ubrr;
-    UCSR0B = (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0);  // RX interrupt
+    UCSR0B = (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0);
     UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
     sei(); 
 }
@@ -321,21 +328,31 @@ void handleLED(Button button) {
 }
 
 int main() 
-{ 
+{   
+
     initMillisTimer();
     initUSART();
     initPWM();
     setup();
+
+
     
     while (1) {
-        PORTB |= (1 << LED_RGB_PIN);
+        
+        // PORTB |= (1 << LED_RGB_RED_PIN);
+        // PORTB |= (1 << LED_RGB_GREEN_PIN);
+        // PORTB |= (1 << LED_RGB_BLUE_PIN);
+        PORTB &= ~(1 << LED_RGB_RED_PIN);   
+        PORTB &= ~(1 << LED_RGB_GREEN_PIN);  
+        PORTB &= ~(1 << LED_RGB_BLUE_PIN); 
+
         handleButton(BUTTON_RED);
         handleButton(BUTTON_GREEN);
         handleButton(BUTTON_BLUE);
         
         handleLED(BUTTON_RED);
         handleLED(BUTTON_GREEN);
-        handleLED(BUTTON_BLUE);
+        handleLED(BUTTON_BLUE);  
 
         if (isResetButtonPressed()) {
             ledStates[BUTTON_RED] = LED_BLINKING;
