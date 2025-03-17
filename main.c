@@ -38,6 +38,9 @@ volatile LEDState ledStates[NUM_BUTTONS] = {LED_BLINKING, LED_BLINKING, LED_BLIN
 #define LED_RGB_RED_PIN   PB3
 #define LED_RGB_GREEN_PIN PB2
 #define LED_RGB_BLUE_PIN  PB1
+#define POT_RED_CHANNEL   2  // A2
+#define POT_GREEN_CHANNEL 3  // A3
+#define POT_BLUE_CHANNEL  4  // A4
 
 
 
@@ -94,7 +97,19 @@ uint16_t readADC() {
     while (ADCSRA & (1 << ADSC));
     return ADC; 
 }
-
+uint16_t readADCChannel(uint8_t channel) {
+    // Set the ADC channel (0-7)
+    ADMUX = (ADMUX & 0xF8) | (channel & 0x07); // Clear the bottom 3 bits and set channel
+    
+    // Start conversion
+    ADCSRA |= (1 << ADSC);
+    
+    // Wait for conversion to complete
+    while (ADCSRA & (1 << ADSC));
+    
+    // Return result
+    return ADC;
+}
 uint8_t readButton(Button button) {
     switch (button) {
         case BUTTON_RED:
@@ -194,11 +209,24 @@ ISR(USART_RX_vect) {
 
 
 
-void initPWM() {
-    DDRC |= (1 << PC1);
-    TCCR1A |= (1 << COM1A1) | (1 << WGM10); 
-    TCCR1B |= (1 << CS11) | (1 << CS10) | (1 << WGM12); 
+// void initPWM() {
+//     DDRC |= (1 << PC1);
+//     TCCR1A |= (1 << COM1A1) | (1 << WGM10); 
+//     TCCR1B |= (1 << CS11) | (1 << CS10) | (1 << WGM12); 
 
+// }
+
+void initPWM() {
+    // Setup timer 2 for PB3 (OC2A) - RED
+    TCCR2A |= (1 << COM2A1) | (1 << WGM21) | (1 << WGM20); // Fast PWM, non-inverting
+    TCCR2B |= (1 << CS22);  // Prescaler = 64
+    
+    // Setup timer 1 for PB2 (OC1B) - GREEN
+    TCCR1A |= (1 << COM1B1) | (1 << WGM10); // 8-bit PWM, non-inverting
+    TCCR1B |= (1 << CS11) | (1 << CS10) | (1 << WGM12); // Prescaler = 64
+    
+    // Setup timer 1 for PB1 (OC1A) - BLUE
+    TCCR1A |= (1 << COM1A1); // Already setup above, just enable output compare
 }
 
 void itoa_custom(int num, char* str, int base) {
@@ -326,7 +354,22 @@ void handleLED(Button button) {
             break;
     }
 }
-
+void handleRGB(){
+    // Read potentiometer values
+    uint16_t redValue = readADCChannel(POT_RED_CHANNEL);
+    uint16_t greenValue = readADCChannel(POT_GREEN_CHANNEL);
+    uint16_t blueValue = readADCChannel(POT_BLUE_CHANNEL);
+    
+    // Convert 10-bit ADC value (0-1023) to 8-bit PWM value (0-255)
+    uint8_t redPWM = redValue >> 2;   // Divide by 4
+    uint8_t greenPWM = greenValue >> 2;
+    uint8_t bluePWM = blueValue >> 2;
+    
+    // Update PWM values for each color
+    OCR2A = redPWM;     // Set RED PWM duty cycle (PB3)
+    OCR1B = greenPWM;   // Set GREEN PWM duty cycle (PB2)
+    OCR1A = bluePWM;    // Set BLUE PWM duty cycle (PB1)
+}
 int main() 
 {   
 
@@ -334,17 +377,13 @@ int main()
     initUSART();
     initPWM();
     setup();
-
+    
 
     
     while (1) {
         
-        // PORTB |= (1 << LED_RGB_RED_PIN);
-        // PORTB |= (1 << LED_RGB_GREEN_PIN);
-        // PORTB |= (1 << LED_RGB_BLUE_PIN);
-        PORTB &= ~(1 << LED_RGB_RED_PIN);   
-        PORTB &= ~(1 << LED_RGB_GREEN_PIN);  
-        PORTB &= ~(1 << LED_RGB_BLUE_PIN); 
+
+        
 
         handleButton(BUTTON_RED);
         handleButton(BUTTON_GREEN);
@@ -353,6 +392,8 @@ int main()
         handleLED(BUTTON_RED);
         handleLED(BUTTON_GREEN);
         handleLED(BUTTON_BLUE);  
+
+        handleRGB();
 
         if (isResetButtonPressed()) {
             ledStates[BUTTON_RED] = LED_BLINKING;
