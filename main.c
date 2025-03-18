@@ -1,6 +1,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
+#include <avr/wdt.h>
 #include "main.h"
 #include <string.h>
 
@@ -28,7 +29,11 @@ volatile uint8_t commandReady = 0;
 volatile uint8_t buttonStates[NUM_BUTTONS] = {0};
 volatile uint8_t lastButtonStates[NUM_BUTTONS] = {0}; 
 volatile uint8_t buttonPressed[NUM_BUTTONS] = {0};
+volatile uint8_t buttonEnabled[NUM_BUTTONS] = {1, 1, 1};
 volatile LEDState ledStates[NUM_BUTTONS] = {LED_BLINKING, LED_BLINKING, LED_BLINKING};
+volatile uint8_t blueIntensity = 255;
+volatile uint8_t potControlEnabled = 1; 
+
 
 
 
@@ -38,6 +43,7 @@ volatile LEDState ledStates[NUM_BUTTONS] = {LED_BLINKING, LED_BLINKING, LED_BLIN
 #define LED_RGB_RED_PIN   PB3
 #define LED_RGB_GREEN_PIN PB2
 #define LED_RGB_BLUE_PIN  PB1
+#define POT_A0_CHANNEL    0  // A0
 #define POT_RED_CHANNEL   2  // A2
 #define POT_GREEN_CHANNEL 3  // A3
 #define POT_BLUE_CHANNEL  4  // A4
@@ -56,7 +62,7 @@ void setup(){
 
 
 
-    ADMUX = (1 << REFS0); //blå potentiometer
+    ADMUX = (1 << REFS0); 
     DDRC |= (1 << LED_BLUE_PIN);
     ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1);
 
@@ -69,7 +75,32 @@ void setup(){
     DDRB &= ~(1 << PD2); //Gul ResetKnapp
     PORTD |= (1 << PD2); 
 
+    EICRA |= (1 << ISC01);    
+    EIMSK |= (1 << INT0);     
+    sei();                    
+
     return;
+}
+ISR(INT0_vect) {
+    _delay_ms(50);
+    if ((PIND & (1 << PD2)) == 0) {
+        // Resetar alla states
+        ledStates[BUTTON_RED] = LED_BLINKING;
+        ledStates[BUTTON_GREEN] = LED_BLINKING;
+        ledStates[BUTTON_BLUE] = LED_BLINKING;
+        buttonEnabled[0] = 1;
+        buttonEnabled[1] = 1;
+        buttonEnabled[2] = 1;
+        potControlEnabled = 1;
+        commandIndex = 0;
+        commandReady = 0;
+        USART_PrintString("System reset\r\n");
+    }
+}
+
+void softwareReset() {
+    wdt_enable(WDTO_15MS);
+    while (1);
 }
 
 void initMillisTimer() {
@@ -93,21 +124,15 @@ uint32_t millis() {
 }
 
 uint16_t readADC() {
+    ADMUX = (ADMUX & 0xF8) | (POT_A0_CHANNEL & 0x07);
     ADCSRA |= (1 << ADSC);
     while (ADCSRA & (1 << ADSC));
     return ADC; 
 }
 uint16_t readADCChannel(uint8_t channel) {
-    // Set the ADC channel (0-7)
-    ADMUX = (ADMUX & 0xF8) | (channel & 0x07); // Clear the bottom 3 bits and set channel
-    
-    // Start conversion
+    ADMUX = (ADMUX & 0xF8) | (channel & 0x07); 
     ADCSRA |= (1 << ADSC);
-    
-    // Wait for conversion to complete
     while (ADCSRA & (1 << ADSC));
-    
-    // Return result
     return ADC;
 }
 uint8_t readButton(Button button) {
@@ -124,6 +149,7 @@ uint8_t readButton(Button button) {
 }
 
 void handleButton(Button button) {
+    if (!buttonEnabled[button]) return;
     uint8_t buttonStateNow = readButton(button);
 
     if (buttonStateNow != lastButtonStates[button]) {
@@ -207,26 +233,21 @@ ISR(USART_RX_vect) {
     }
 }
 
-
-
-// void initPWM() {
-//     DDRC |= (1 << PC1);
-//     TCCR1A |= (1 << COM1A1) | (1 << WGM10); 
-//     TCCR1B |= (1 << CS11) | (1 << CS10) | (1 << WGM12); 
-
-// }
-
 void initPWM() {
-    // Setup timer 2 for PB3 (OC2A) - RED
-    TCCR2A |= (1 << COM2A1) | (1 << WGM21) | (1 << WGM20); // Fast PWM, non-inverting
-    TCCR2B |= (1 << CS22);  // Prescaler = 64
+    // Setup timer 2 för PB3 - RED
+    TCCR2A |= (1 << COM2A1) | (1 << WGM21) | (1 << WGM20);
+    TCCR2B |= (1 << CS22);
     
-    // Setup timer 1 for PB2 (OC1B) - GREEN
-    TCCR1A |= (1 << COM1B1) | (1 << WGM10); // 8-bit PWM, non-inverting
-    TCCR1B |= (1 << CS11) | (1 << CS10) | (1 << WGM12); // Prescaler = 64
+    // Setup timer 2 för PB2 - GREEN
+    TCCR1A |= (1 << COM1B1) | (1 << WGM10);
+    TCCR1B |= (1 << CS11) | (1 << CS10) | (1 << WGM12);
     
-    // Setup timer 1 for PB1 (OC1A) - BLUE
-    TCCR1A |= (1 << COM1A1); // Already setup above, just enable output compare
+    // Setup timer 1 för PB1 - BLUE
+    TCCR1A |= (1 << COM1A1); 
+    // Setup Timer0 för blue LED PWM
+    TCCR0A |= (1 << COM0A1) | (1 << WGM01) | (1 << WGM00);
+    TCCR0B |= (1 << CS01) | (1 << CS00);
+    OCR0A = 255;
 }
 
 void itoa_custom(int num, char* str, int base) {
@@ -237,7 +258,6 @@ void itoa_custom(int num, char* str, int base) {
         *ptr = '\0';
         return;
     }
-
 
     if (num < 0 && base == 10) {
         *ptr++ = '-';
@@ -268,30 +288,77 @@ void processCommand(char *command) {
     USART_PrintString(command);
     USART_PrintString("\r\n");
 
-
     USART_PrintString("Processed Command: ");
     USART_PrintString(command);
     USART_PrintString("\r\n");
 
- 
     if (strcasecmp_custom(command, "help") == 0) {
         USART_PrintString("Available commands:\r\n");
         USART_PrintString("1. GetADC - Get the ADC value from the potentiometer\r\n");
         USART_PrintString("2. LedOn <color> - Turn on the LED for the specified color (red, green, blue)\r\n");
         USART_PrintString("3. LedOff <color> - Turn off the LED for the specified color (red, green, blue)\r\n");
         USART_PrintString("4. LedBlink <color> - Make the LED blink for the specified color (red, green, blue)\r\n");
-        USART_PrintString("5. Reset - Reset the system (press the reset button)\r\n");
+        USART_PrintString("5. Reset - Restart the software\r\n");
+        USART_PrintString("6. Disable button <number> - Disable a button by its number\r\n");
+        USART_PrintString("7. Enable button <number> - Enable a button by its number\r\n");
+        USART_PrintString("8. LedPower <0-255|-1> - Set LED intensity (0-255) or enable potentiometer control (-1)\r\n");
         USART_PrintString("\r\n");
     }
 
+    if (strncasecmp_custom(command, "disable button ", 15) == 0) {
+        char *buttonNum = command + 15;
+        int btnIdx = atoi_custom(buttonNum) - 1;
+        
+        if (btnIdx >= 0 && btnIdx < NUM_BUTTONS) {
+            buttonEnabled[btnIdx] = 0;
+            USART_PrintString("Button ");
+            USART_Transmit('1' + btnIdx);
+            USART_PrintString(" disabled\r\n");
+        } else {
+            USART_PrintString("Invalid button number\r\n");
+        }
+    }
+    else if (strncasecmp_custom(command, "enable button ", 14) == 0) {
+        char *buttonNum = command + 14;
+        int btnIdx = atoi_custom(buttonNum) - 1;
+        
+        if (btnIdx >= 0 && btnIdx < NUM_BUTTONS) {
+            buttonEnabled[btnIdx] = 1;
+            USART_PrintString("Button ");
+            USART_Transmit('1' + btnIdx);
+            USART_PrintString(" enabled\r\n");
+        } else {
+            USART_PrintString("Invalid button number\r\n");
+        }
+    }
+    else if (strncasecmp_custom(command, "ledpower ", 9) == 0) {
+        char *powerLevel = command + 9;
+        int level = atoi_custom(powerLevel);
+        
+        if (level == -1) {
+            potControlEnabled = 1;
+            USART_PrintString("Potentiometer control enabled\r\n");
+        } else if (level >= 0 && level <= 255) {
+            potControlEnabled = 0;
+            blueIntensity = level;
+            USART_PrintString("Blue LED intensity set to: ");
+            char buffer[10];
+            itoa_custom(level, buffer, 10);
+            USART_PrintString(buffer);
+            USART_PrintString("\r\n");
+        } else {
+            USART_PrintString("Invalid power level (use 0-255 or -1)\r\n");
+        }
+    }
+
     else if (strcasecmp_custom(command, "getadc") == 0) {
-        uint16_t adcValue = readADC(); 
+        uint16_t adcValue = readADCChannel(POT_A0_CHANNEL); 
         char buffer[10];
         itoa_custom(adcValue, buffer, 10);
-        USART_PrintString("ADC Value: ");
+        USART_PrintString("A0 Potentiometer Value: ");
         USART_PrintString(buffer);
         USART_PrintString("\r\n");
-    } 
+    }
     else if (strcasecmp_custom(command, "ledon red") == 0) {
         ledStates[BUTTON_RED] = LED_ON;
     } 
@@ -320,55 +387,99 @@ void processCommand(char *command) {
         ledStates[BUTTON_BLUE] = LED_BLINKING;
     } 
     else if (strcasecmp_custom(command, "reset") == 0) {
-        ledStates[BUTTON_RED] = LED_BLINKING;
-        ledStates[BUTTON_GREEN] = LED_BLINKING;
-        ledStates[BUTTON_BLUE] = LED_BLINKING;
+        softwareReset();
     } 
     else {
         USART_PrintString("Unknown Command\r\n");
     }
 }
 
+int atoi_custom(const char *str) {
+    int res = 0;
+    int sign = 1;
+    
+ 
+    if (*str == '-') {
+        sign = -1;
+        str++;
+    }
+    
+    while (*str >= '0' && *str <= '9') {
+        res = res * 10 + (*str - '0');
+        str++;
+    }
+    
+    return sign * res;
+}
+
 void handleLED(Button button) {
-    switch (ledStates[button]) {
-        case LED_OFF:
-            if (button == BUTTON_RED) PORTB &= ~(1 << LED_RED_PIN);
-            else if (button == BUTTON_GREEN) PORTB &= ~(1 << LED_GREEN_PIN);
-            else if (button == BUTTON_BLUE) PORTC &= ~(1 << LED_BLUE_PIN); 
-            break;
-        case LED_ON:
-            if (button == BUTTON_RED) PORTB |= (1 << LED_RED_PIN);
-            else if (button == BUTTON_GREEN) PORTB |= (1 << LED_GREEN_PIN);
-            else if (button == BUTTON_BLUE) PORTC |= (1 << LED_BLUE_PIN);
-            break;
-        case LED_BLINKING:
-            if (millis() % 2000 < 1000) {
+    if (button == BUTTON_BLUE) {
+        switch (ledStates[button]) {
+            case LED_OFF:
+                PORTC &= ~(1 << LED_BLUE_PIN);
+                break;
+            case LED_ON:
+                if (potControlEnabled) {
+                    uint16_t potValue = readADC(); 
+                    blueIntensity = potValue >> 2;
+                    OCR0A = blueIntensity;
+                    PORTC |= (1 << LED_BLUE_PIN);
+                } else {
+                    PORTC |= (1 << LED_BLUE_PIN);
+                }
+                break;
+            case LED_BLINKING:
+                if (millis() % 2000 < 1000) {
+                    if (potControlEnabled) {
+                        uint16_t potValue = readADC();
+                        blueIntensity = potValue >> 2;
+                        OCR0A = blueIntensity;
+                    }
+                    PORTC |= (1 << LED_BLUE_PIN);
+                } else {
+                    PORTC &= ~(1 << LED_BLUE_PIN);
+                }
+                break;
+        }
+    } 
+    else {
+        switch (ledStates[button]) {
+            case LED_OFF:
+                if (button == BUTTON_RED) PORTB &= ~(1 << LED_RED_PIN);
+                else if (button == BUTTON_GREEN) PORTB &= ~(1 << LED_GREEN_PIN);
+                else if (button == BUTTON_BLUE) PORTC &= ~(1 << LED_BLUE_PIN); 
+                break;
+            case LED_ON:
                 if (button == BUTTON_RED) PORTB |= (1 << LED_RED_PIN);
                 else if (button == BUTTON_GREEN) PORTB |= (1 << LED_GREEN_PIN);
                 else if (button == BUTTON_BLUE) PORTC |= (1 << LED_BLUE_PIN);
-            } else {
-                if (button == BUTTON_RED) PORTB &= ~(1 << LED_RED_PIN);
-                else if (button == BUTTON_GREEN) PORTB &= ~(1 << LED_GREEN_PIN);
-                else if (button == BUTTON_BLUE) PORTC &= ~(1 << LED_BLUE_PIN);
-            }
-            break;
+                break;
+            case LED_BLINKING:
+                if (millis() % 2000 < 1000) {
+                    if (button == BUTTON_RED) PORTB |= (1 << LED_RED_PIN);
+                    else if (button == BUTTON_GREEN) PORTB |= (1 << LED_GREEN_PIN);
+                    else if (button == BUTTON_BLUE) PORTC |= (1 << LED_BLUE_PIN);
+                } else {
+                    if (button == BUTTON_RED) PORTB &= ~(1 << LED_RED_PIN);
+                    else if (button == BUTTON_GREEN) PORTB &= ~(1 << LED_GREEN_PIN);
+                    else if (button == BUTTON_BLUE) PORTC &= ~(1 << LED_BLUE_PIN);
+                }
+                break;
+        }
     }
 }
 void handleRGB(){
-    // Read potentiometer values
     uint16_t redValue = readADCChannel(POT_RED_CHANNEL);
     uint16_t greenValue = readADCChannel(POT_GREEN_CHANNEL);
     uint16_t blueValue = readADCChannel(POT_BLUE_CHANNEL);
     
-    // Convert 10-bit ADC value (0-1023) to 8-bit PWM value (0-255)
-    uint8_t redPWM = redValue >> 2;   // Divide by 4
+    uint8_t redPWM = redValue >> 2; 
     uint8_t greenPWM = greenValue >> 2;
     uint8_t bluePWM = blueValue >> 2;
     
-    // Update PWM values for each color
-    OCR2A = redPWM;     // Set RED PWM duty cycle (PB3)
-    OCR1B = greenPWM;   // Set GREEN PWM duty cycle (PB2)
-    OCR1A = bluePWM;    // Set BLUE PWM duty cycle (PB1)
+    OCR2A = redPWM;
+    OCR1B = greenPWM;
+    OCR1A = bluePWM;
 }
 int main() 
 {   
@@ -377,14 +488,8 @@ int main()
     initUSART();
     initPWM();
     setup();
-    
-
-    
+       
     while (1) {
-        
-
-        
-
         handleButton(BUTTON_RED);
         handleButton(BUTTON_GREEN);
         handleButton(BUTTON_BLUE);
@@ -395,12 +500,6 @@ int main()
 
         handleRGB();
 
-        if (isResetButtonPressed()) {
-            ledStates[BUTTON_RED] = LED_BLINKING;
-            ledStates[BUTTON_GREEN] = LED_BLINKING;
-            ledStates[BUTTON_BLUE] = LED_BLINKING;
-        }
-        
         if (commandReady) {
             char tempCommand[COMMAND_BUFFER_SIZE];
             strcpy(tempCommand, (char*)commandBuffer); 
