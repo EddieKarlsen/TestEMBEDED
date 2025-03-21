@@ -13,6 +13,7 @@
     "files.associations": {
         "io.h": "c",
         "portpins.h": "c",
-        "delay.h": "c"
+        "delay.h": "c",
+        "interrupt.h": "c"
     }
 }

@@ -14,7 +14,7 @@
 #include "commands.h"
 
 void setup(void) {
-    // Initiera GPIO för LEDs
+  
     DDRB |= (1 << LED_RED_PIN);
     DDRB |= (1 << LED_GREEN_PIN);
     DDRC |= (1 << LED_BLUE_PIN);
@@ -22,7 +22,7 @@ void setup(void) {
     DDRB |= (1 << LED_RGB_GREEN_PIN);
     DDRB |= (1 << LED_RGB_BLUE_PIN);
 
-    // Interrupt för reset-knapp
+    
     EICRA |= (1 << ISC01);    
     EIMSK |= (1 << INT0);     
     sei();                    
@@ -34,7 +34,7 @@ void softwareReset(void) {
 }
 
 int main(void) {
-    // Initiera alla subsystem
+   
     initMillisTimer();
     initUSART();
     initPWM();

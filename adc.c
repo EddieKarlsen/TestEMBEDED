@@ -3,8 +3,8 @@
 #include "main.h"
 
 void initADC(void) {
-    ADMUX = (1 << REFS0); // Använd AVCC som referens
-    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1); // Enable ADC, prescaler 64
+    ADMUX = (1 << REFS0); 
+    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1);
 }
 
 uint16_t readADC(void) {
