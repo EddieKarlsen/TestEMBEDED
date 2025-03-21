@@ -234,17 +234,17 @@ ISR(USART_RX_vect) {
 }
 
 void initPWM() {
-    // Setup timer 2 för PB3 - RED
+    // Setup timer 2 för PB3
     TCCR2A |= (1 << COM2A1) | (1 << WGM21) | (1 << WGM20);
     TCCR2B |= (1 << CS22);
     
-    // Setup timer 2 för PB2 - GREEN
+    // Setup timer 2 för PB2 
     TCCR1A |= (1 << COM1B1) | (1 << WGM10);
     TCCR1B |= (1 << CS11) | (1 << CS10) | (1 << WGM12);
     
-    // Setup timer 1 för PB1 - BLUE
+    // Setup timer 1 för PB1
     TCCR1A |= (1 << COM1A1); 
-    // Setup Timer0 för blue LED PWM
+    // Setup Timer0 för den Blåa LED PWM
     TCCR0A |= (1 << COM0A1) | (1 << WGM01) | (1 << WGM00);
     TCCR0B |= (1 << CS01) | (1 << CS00);
     OCR0A = 255;
